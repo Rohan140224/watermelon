@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ওয়াটারমেলন</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍉</text></svg>">
+<style>
+:root{--hud:rgba(255,250,240,.92);--ink:#2b2a27;--acc:#2f7d5b;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--hud:rgba(36,38,36,.92);--ink:#eee8dc;--acc:#5fc79a}}
+:root[data-theme="dark"]{--hud:rgba(36,38,36,.92);--ink:#eee8dc;--acc:#5fc79a}
+html,body{height:100%;margin:0;overflow:hidden;background:#2a302d;color:var(--ink);font-family:system-ui,"Noto Sans Bengali","Hind Siliguri",sans-serif;touch-action:none;user-select:none;-webkit-user-select:none}
+canvas{position:fixed;left:0;top:0;display:block}
+.card{background:var(--hud);color:var(--ink);border-radius:14px;padding:8px 14px;font-weight:600}
+#money{position:fixed;left:12px;top:calc(env(safe-area-inset-top,0px) + 12px);font-size:18px}
+#toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 58px);transform:translateX(-50%);max-width:86%;text-align:center;opacity:0;transition:opacity .25s;pointer-events:none}
+#stick{position:fixed;left:22px;bottom:calc(env(safe-area-inset-bottom,0px) + 28px);width:120px;height:120px;border-radius:50%;background:var(--hud);opacity:.8}
+#knob{position:absolute;left:36px;top:36px;width:48px;height:48px;border-radius:50%;background:var(--acc)}
+#act{position:fixed;right:22px;bottom:calc(env(safe-area-inset-bottom,0px) + 44px);display:none;border:0;font:inherit;font-size:17px;background:var(--acc);color:#fff;border-radius:999px;padding:16px 22px}
+#panel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);display:none;width:min(320px,88%);padding:16px}
+#panel h3{margin:0 0 4px;font-size:18px}
+#panel p{margin:0 0 12px;font-size:14px;font-weight:400}
+#sw{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px}
+#sw button{width:64px;height:64px;border-radius:12px;border:3px solid transparent;font:inherit;font-size:12px;color:#fff;text-shadow:0 1px 2px #000}
+#sw button.on{border-color:var(--ink)}
+#close{border:0;font:inherit;background:var(--acc);color:#fff;border-radius:10px;padding:10px 18px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="money" class="card">৳ 0</div>
+<div id="toast" class="card"></div>
+<div id="stick"><div id="knob"></div></div>
+<button id="act"></button>
+<div id="panel" class="card">
+  <h3>পোশাকের দোকান</h3>
+  <p>নতুন শার্ট ৳80। কেনা শার্ট বিনা খরচে পরা যায়।</p>
+  <div id="sw"></div>
+  <button id="close">বন্ধ করুন</button>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const cv=$('c'),g=cv.getContext('2d');
+let W,H,K=1,ox=0,oy=0;
+function rs(){const d=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*d;cv.height=H*d;cv.style.width=W+'px';cv.style.height=H+'px';g.setTransform(d,0,0,d,0,0);K=W<600?.8:1.1}
+addEventListener('resize',rs);rs();
+
+const N=21,COLORS=['#d9534f','#2f7d5b','#3b6fb6','#e0a526','#7b4fa3','#333333'],PRICE=80,HOUSE=300;
+let S={money:50,color:COLORS[0],own:[COLORS[0]],houses:[]};
+try{const s=JSON.parse(localStorage.getItem('city1'));if(s&&s.own)S=s}catch(e){}
+const save=()=>{try{localStorage.setItem('city1',JSON.stringify(S))}catch(e){}};
+
+// buildings
+const nm={1:'চায়ের দোকান',11:'রিকশা গ্যারেজ',6:'পোশাকের দোকান',3:'বাড়ি',8:'বাড়ি',14:'বাড়ি'};
+const kc={job:'#c97c5d',shop:'#5b86b5',house:'#d6b36a'},flats=['#b8ada0','#9ea7ad','#a9a592','#a39aa6'];
+const B=[];
+for(let k=0;k<16;k++){
+  const bi=k%4,bj=k>>2,wide=k%3==0,tall=k%2==0;
+  const kind=!nm[k]?'flat':k==6?'shop':[3,8,14].includes(k)?'house':'job';
+  B.push({id:k,x:bi*5+(wide?1:2),y:bj*5+(tall?1:2),w:wide?3:2,h:tall?3:2,ht:50+(k*37)%60,
+    c:kind=='flat'?flats[k%4]:kc[kind],kind,name:nm[k]||'',ic:{job:'🍵',shop:'👕',house:'🏠'}[kind]||''});
+}
+B[11].ic='🛺';
+const blk=(x,y)=>x<.3||y<.3||x>N-.3||y>N-.3||B.some(b=>x>b.x-.25&&x<b.x+b.w+.25&&y>b.y-.25&&y<b.y+b.h+.25);
+
+// people
+const me={x:5.5,y:5.5},npcs=[];
+const rp=()=>{let x,y;do{x=Math.random()*N;y=Math.random()*N}while(blk(x,y));return[x,y]};
+for(let i=0;i<14;i++){const[x,y]=rp(),[tx,ty]=rp();npcs.push({x,y,tx,ty,c:COLORS[i%6],sp:.8+Math.random()*.7})}
+
+// input
+const keys={};let jx=0,jy=0;
+addEventListener('keydown',e=>{keys[e.key.toLowerCase()]=1;if(e.key=='e'||e.key==' ')doAct()});
+addEventListener('keyup',e=>keys[e.key.toLowerCase()]=0);
+const st=$('stick'),kn=$('knob');
+function sv(e){const r=st.getBoundingClientRect(),dx=e.clientX-r.left-60,dy=e.clientY-r.top-60,m=Math.min(1,Math.hypot(dx,dy)/45),a=Math.atan2(dy,dx);
+  jx=Math.cos(a)*m;jy=Math.sin(a)*m;kn.style.transform=`translate(${jx*40}px,${jy*40}px)`}
+st.addEventListener('pointerdown',e=>{st.setPointerCapture(e.pointerId);sv(e)});
+st.addEventListener('pointermove',e=>{if(e.buttons||e.pointerType=='touch')sv(e)});
+const rel=()=>{jx=jy=0;kn.style.transform=''};
+st.addEventListener('pointerup',rel);st.addEventListener('pointercancel',rel);
+
+// ui
+let tt;function toast(t){const e=$('toast');e.textContent=t;e.style.opacity=1;clearTimeout(tt);tt=setTimeout(()=>e.style.opacity=0,1800)}
+const hud=()=>$('money').textContent='৳ '+S.money;
+function openShop(){const sw=$('sw');sw.innerHTML='';
+  COLORS.forEach(c=>{const o=S.own.includes(c),b=document.createElement('button');b.style.background=c;b.className=c==S.color?'on':'';b.textContent=o?(c==S.color?'পরা আছে':'পরুন'):'৳'+PRICE;
+    b.onclick=()=>{if(!o){if(S.money<PRICE)return toast('টাকা কম আছে');S.money-=PRICE;S.own.push(c)}S.color=c;save();hud();openShop()};sw.appendChild(b)});
+  $('panel').style.display='block'}
+$('close').onclick=()=>$('panel').style.display='none';
+let near=null,cool=0;
+function doAct(){if(!near||$('panel').style.display=='block')return;const b=near;
+  if(b.kind=='job'){if(cool>performance.now())return toast('একটু অপেক্ষা করুন');cool=performance.now()+1500;S.money+=20;toast('কাজ শেষ, +৳20')}
+  else if(b.kind=='shop')return openShop();
+  else if(b.kind=='house'){if(S.houses.includes(b.id))return toast('এটা আপনার বাড়ি, ভাড়া আসছে');
+    if(S.money<HOUSE)return toast('বাড়ি কিনতে ৳'+HOUSE+' লাগবে');S.money-=HOUSE;S.houses.push(b.id);toast('বাড়ি কেনা হয়েছে! এখন ভাড়া আসবে')}
+  save();hud()}
+$('act').onclick=doAct;
+
+// update
+const mv=(o,dx,dy)=>{if(!blk(o.x+dx,o.y))o.x+=dx;if(!blk(o.x,o.y+dy))o.y+=dy};
+let acc=0;
+function upd(dt){
+  const ix=jx+(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0),iy=jy+(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0);
+  const wx=ix+iy,wy=iy-ix,m=Math.hypot(wx,wy),s=Math.min(1,Math.hypot(ix,iy));
+  if(m>.05&&$('panel').style.display!='block')mv(me,wx/m*s*3.2*dt,wy/m*s*3.2*dt);
+  npcs.forEach(n=>{const dx=n.tx-n.x,dy=n.ty-n.y,d=Math.hypot(dx,dy);
+    if(d<.2){[n.tx,n.ty]=rp();return}
+    const ox2=n.x,oy2=n.y;mv(n,dx/d*n.sp*dt,dy/d*n.sp*dt);if(n.x==ox2&&n.y==oy2)[n.tx,n.ty]=rp()});
+  near=null;B.forEach(b=>{if(!b.name||b.kind=='flat')return;
+    const dx=Math.max(b.x-me.x,0,me.x-b.x-b.w),dy=Math.max(b.y-me.y,0,me.y-b.y-b.h);if(Math.hypot(dx,dy)<.8)near=b});
+  const a=$('act');a.style.display=near&&$('panel').style.display!='block'?'block':'none';
+  if(near)a.textContent=near.kind=='job'?'কাজ করুন (+৳20)':near.kind=='shop'?'ভেতরে যান':S.houses.includes(near.id)?'আমার বাড়ি':'বাড়ি কিনুন (৳'+HOUSE+')';
+  acc+=dt;if(acc>=5){acc=0;if(S.houses.length){S.money+=5*S.houses.length;toast('ভাড়া এসেছে +৳'+5*S.houses.length);save();hud()}}
+}
+
+// draw
+const P=(x,y,z=0)=>[(x-y)*32*K+ox,(x+y)*16*K+oy-z*K];
+function poly(p,f){g.beginPath();p.forEach((q,i)=>i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]));g.closePath();g.fillStyle=f;g.fill()}
+function box(b){
+  const A=P(b.x,b.y,b.ht),Bq=P(b.x+b.w,b.y,b.ht),C=P(b.x+b.w,b.y+b.h,b.ht),D=P(b.x,b.y+b.h,b.ht);
+  const c0=P(b.x,b.y+b.h),c1=P(b.x+b.w,b.y+b.h),c2=P(b.x+b.w,b.y);
+  poly([c0,c1,C,D],b.c);poly([c0,c1,C,D],'rgba(0,0,0,.2)');
+  poly([c1,c2,Bq,C],b.c);poly([c1,c2,Bq,C],'rgba(0,0,0,.38)');
+  poly([A,Bq,C,D],b.c);poly([A,Bq,C,D],'rgba(255,255,255,.14)');
+  g.strokeStyle='rgba(255,255,255,.4)';g.lineWidth=3*K;g.setLineDash([7*K,7*K]);
+  for(let z=14;z<b.ht-6;z+=16){let a=P(b.x,b.y+b.h,z),c=P(b.x+b.w,b.y+b.h,z),d=P(b.x+b.w,b.y,z);
+    g.beginPath();g.moveTo(a[0],a[1]);g.lineTo(c[0],c[1]);g.lineTo(d[0],d[1]);g.stroke()}
+  g.setLineDash([]);
+  if(b.name){const t=P(b.x+b.w/2,b.y+b.h/2,b.ht+16),own=S.houses.includes(b.id);
+    g.font=`600 ${12*K+3}px system-ui,"Noto Sans Bengali",sans-serif`;g.textAlign='center';g.lineWidth=4;g.strokeStyle='rgba(0,0,0,.6)';g.fillStyle='#fff';
+    const s=b.ic+' '+b.name+(own?' ✅':'');g.strokeText(s,t[0],t[1]);g.fillText(s,t[0],t[1])}
+}
+function person(o,c){const p=P(o.x,o.y);
+  g.fillStyle='rgba(0,0,0,.28)';g.beginPath();g.ellipse(p[0],p[1],9*K,4.5*K,0,0,7);g.fill();
+  g.fillStyle='#2b2a27';g.fillRect(p[0]-5*K,p[1]-8*K,10*K,8*K);
+  g.fillStyle=c;g.fillRect(p[0]-6*K,p[1]-23*K,12*K,16*K);
+  g.fillStyle='#e0b48a';g.beginPath();g.arc(p[0],p[1]-28*K,6*K,0,7);g.fill()}
+function draw(){
+  ox=W/2-(me.x-me.y)*32*K;oy=H/2-(me.x+me.y)*16*K+30;
+  g.fillStyle='#2a302d';g.fillRect(0,0,W,H);
+  for(let i=0;i<N;i++)for(let j=0;j<N;j++){const p=P(i,j);if(p[0]<-60||p[0]>W+60||p[1]<-40||p[1]>H+60)continue;
+    const road=i%5==0||j%5==0;
+    poly([p,P(i+1,j),P(i+1,j+1),P(i,j+1)],road?'#585c5f':(i+j)%2?'#cfc8b6':'#c7c0ad')}
+  const items=B.map(b=>({d:b.x+b.w/2+b.y+b.h/2,f:()=>box(b)}));
+  npcs.forEach(n=>items.push({d:n.x+n.y,f:()=>person(n,n.c)}));
+  items.push({d:me.x+me.y,f:()=>person(me,S.color)});
+  items.sort((a,b)=>a.d-b.d).forEach(i=>i.f());
+}
+let last=performance.now();
+(function loop(t){const dt=Math.min(.05,(t-last)/1000);last=t;upd(dt);draw();requestAnimationFrame(loop)})(last);
+hud();toast('ওয়াটারমেলনে স্বাগতম! জয়স্টিক দিয়ে হাঁটুন।');
+</script>
+</body>
+</html>
